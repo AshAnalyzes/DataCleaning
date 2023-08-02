@@ -5,3 +5,191 @@ Data Cleaning Case Study
 Skills used: Joins, CTE's, Cleaning string functions
 
 */
+
+-- Checking the data has been imported correctly
+
+SELECT *
+ FROM `spatial-motif-388503.Data_cleaning.Datacleaning` 
+
+-- Double checking the same number of rows have been added as were on the original spreadsheet
+
+SELECT COUNT(UniqueID_)
+ FROM `spatial-motif-388503.Data_cleaning.Datacleaning` 
+
+-- Dealing with the NULL values in property address. 
+
+-- STEP 1 create an additional column "new_address"
+
+Select *,
+      IFNULL(a.PropertyAddress, b.PropertyAddress) as new_prop,
+FROM `spatial-motif-388503.Data_cleaning.cleaning` a
+JOIN `spatial-motif-388503.Data_cleaning.cleaning` b
+ON a.ParcelID = b.ParcelID
+AND a.UniqueID_ <> b.UniqueID_
+WHERE a.PropertyAddress IS NULL
+
+-- STEP 2 Removing duplicate columns created by previous query, save this out[put as new table(new_address2). 
+
+ SELECT UniqueID_,
+       ParcelID,
+       LandUse,
+       PropertyAddress,
+       SaleDate,
+       SalePrice,
+       LegalReference,
+       SoldAsVacant,
+       OwnerName,
+       OwnerAddress,
+       Acreage,
+       TaxDistrict,
+       LandValue,
+       BuildingValue,
+       TotalValue,
+       YearBuilt,
+       Bedrooms,
+       FullBath,
+       HalfBath,
+       new_address
+FROM `spatial-motif-388503.Data_cleaning.new_address` 
+
+-- STEP 3 Create a second table to capture the records where the property address is NOT NULL
+
+SELECT *,
+    PropertyAddress AS new_address
+FROM `spatial-motif-388503.Data_cleaning.cleaning` 
+WHERE PropertyAddress IS NOT NULL
+
+-- STEP 4, Combine these two new tables using UNION ALL 
+
+CREATE TABLE `spatial-motif-388503.Data_cleaning.new_address2` AS  
+SELECT * FROM `spatial-motif-388503.Data_cleaning.new_address`
+UNION ALL 
+SELECT * FROM `spatial-motif-388503.Data_cleaning.new_addressnonull`
+
+-- Checking that there are now no entries with a null value for property address 
+
+SELECT *,
+FROM `spatial-motif-388503.Data_cleaning.new_address_combined` 
+WHERE PropertyAddress IS NULL
+
+-- Checking that the parcelID each address is associated with does actually have the same address as the new_address column
+
+SELECT *,
+FROM `spatial-motif-388503.Data_cleaning.new_address_combined` 
+WHERE ParcelID = '026 06 0A 038.00'
+
+-- Removing now redundant PropetyAddress field from dataset
+
+SELECT *
+EXCEPT (PropertyAddress)
+FROM `spatial-motif-388503.Data_cleaning.new_address_combined`.
+
+-- Reworking the new_address column to be easier to read by splitting street address and suburb into two new columns:
+
+SELECT *,
+      SPLIT(new_address, ',')[offset(0)] as Property_Street_address,
+      SPLIT(new_address, ',')[offset(1)] as Property_Suburb
+FROM `spatial-motif-388503.Data_cleaning.updated_address` 
+
+-- Seperating the OwnerAddress column into Street address, suburb and state columns.
+
+SELECT *,
+      SPLIT(OwnerAddress, ',')[offset(0)] as Owner_Street_address,
+      SPLIT(OwnerAddress, ',')[offset(1)] as Owner_Suburb,
+      SPLIT(OwnerAddress, ',')[offset(2)] as Owner_State 
+FROM `spatial-motif-388503.Data_cleaning.Split1` 
+
+-- Removing duplicate entries using CTE by identifying and retaining only entries with unique values:
+
+WITH RowNumCTE AS 
+(
+SELECT *,
+        ROW_NUMBER() OVER (
+        PARTITION BY ParcelID,
+                     Property_Street_address,
+                     SalePrice,
+                     SaleDate,
+                     LegalReference) row_num
+FROM `spatial-motif-388503.Data_cleaning.Split2` 
+)
+SELECT *,
+FROM RowNumCTE
+WHERE row_num = 1
+
+-- Correcting LandUse Typos using very cumbersome CASE statements (restricted from using more efficient funtions in BigQuery). 
+
+-- STEP 1 Ensure there are no Null values in LandUse column:
+
+SELECT *
+FROM `spatial-motif-388503.Data_cleaning.unique_records` 
+WHERE LandUse IS NULL
+
+-- STEP 2 Create a list of all existing LandUse column strings 
+
+SELECT DISTINCT (LandUse)
+FROM `spatial-motif-388503.Data_cleaning.unique_records` 
+ORDER BY LandUse 
+
+-- STEP 3 Use CASE STATEMENT to create new Land_use column with updated strings
+
+SELECT *,
+    CASE WHEN LandUse = 'APARTMENT: LOW RISE (BUILT SINCE 1960)' THEN 'APARTMENT: LOW RISE (BUILT SINCE 1960)'
+        WHEN LandUse = 'CHURCH' THEN 'CHURCH'
+        WHEN LandUse = 'CLUB/UNION HALL/LODGE' THEN 'CLUB/UNION HALL/LODGE'
+        WHEN LandUse = 'CONDO' THEN 'CONDO'
+        WHEN LandUse = 'CONDOMINIUM OFC  OR OTHER COM CONDO' THEN 'CONDO'
+        WHEN LandUse = 'CONVENIENCE MARKET WITHOUT GAS' THEN 'CONVENIENCE MARKET WITHOUT GAS'
+        WHEN LandUse = 'DAY CARE CENTER' THEN 'DAY CARE CENTER'
+        WHEN LandUse = 'DORMITORY/BOARDING HOUSE' THEN 'DORMITORY/BOARDING HOUSE'
+        WHEN LandUse = 'DUPLEX' THEN 'DUPLEX'
+        WHEN LandUse = 'FOREST' THEN 'FOREST'
+        WHEN LandUse = 'GREENBELT' THEN 'GREENBELT'
+        WHEN LandUse = 'GREENBELT/RESGRRENBELT/RES' THEN 'GREENBELT'
+        WHEN LandUse = 'LIGHT MANUFACTURING' THEN 'LIGHT MANUFACTURING'
+        WHEN LandUse = 'METRO OTHER THAN OFC, SCHOOL,HOSP, OR PARK' THEN 'METRO OTHER THAN OFC, SCHOOL,HOSP, OR PARK'
+        WHEN LandUse = 'MOBILE HOME' THEN 'MOBILE HOME'
+        WHEN LandUse = 'MORTUARY/CEMETERY' THEN 'MORTUARY/CEMETERY'
+        WHEN LandUse = 'NIGHTCLUB/LOUNGE' THEN 'NIGHTCLUB/LOUNGE'
+        WHEN LandUse = 'NON-PROFIT CHARITABLE SERVICE' THEN 'NON-PROFIT CHARITABLE SERVICE'
+        WHEN LandUse = 'OFFICE BLDG (ONE OR TWO STORIES)' THEN 'OFFICE BLDG (ONE OR TWO STORIES)'
+        WHEN LandUse = 'ONE STORY GENERAL RETAIL STORE' THEN 'ONE STORY GENERAL RETAIL STORE'
+        WHEN LandUse = 'PARKING LOT' THEN 'PARKING LOT'
+        WHEN LandUse = 'PARSONAGE' THEN 'PARSONAGE'
+        WHEN LandUse = 'QUADPLEX' THEN 'QUADPLEX'
+        WHEN LandUse = 'RESIDENTIAL COMBO/MISC' THEN 'RESIDENTIAL COMBO/MISC'
+        WHEN LandUse = 'RESIDENTIAL CONDO' THEN 'RESIDENTIAL CONDO'
+        WHEN LandUse = 'RESTURANT/CAFETERIA' THEN 'RESTURANT/CAFETERIA'
+        WHEN LandUse = 'SINGLE FAMILY' THEN 'SINGLE FAMILY'
+        WHEN LandUse = 'SMALL SERVICE SHOP' THEN 'SMALL SERVICE SHOP'
+        WHEN LandUse = 'SPLIT CLASS' THEN 'SPLIT CLASS'
+        WHEN LandUse = 'STRIP SHOPPING CENTER' THEN 'STRIP SHOPPING CENTER'
+        WHEN LandUse = 'TERMINAL/DISTRIBUTION WAREHOUSE' THEN 'TERMINAL/DISTRIBUTION WAREHOUSE'
+        WHEN LandUse = 'TRIPLEX' THEN 'TRIPLEX'
+        WHEN LandUse = 'VACANT COMMERCIAL LAND' THEN 'VACANT COMMERCIAL LAND'
+        WHEN LandUse = 'VACANT RES LAND' THEN 'VACANT RESIDENTIAL LAND'
+        WHEN LandUse = 'VACANT RESIDENTIAL LAND' THEN 'VACANT RESIDENTIAL LAND'
+        WHEN LandUse = 'VACANT RESIENTIAL LAND' THEN 'VACANT RESIDENTIAL LAND'
+        WHEN LandUse = 'VACANT RURAL LAND' THEN 'VACANT RURAL LAND'
+        WHEN LandUse = 'VACANT ZONED MULTI FAMILY' THEN 'VACANT ZONED MULTI FAMILY'
+        WHEN LandUse = 'ZERO LOT LINE' THEN 'ZERO LOT LINE'
+        ELSE 'GREENBELT/RES'
+   END AS Land_Use
+FROM `spatial-motif-388503.Data_cleaning.unique_records` 
+ORDER BY UniqueID_
+
+-- Removing old columns that have since been reworked during the data cleaning process, and renaming the "new_address" column to "property_address" for clarity. Limiting export due to file size:
+
+SELECT *
+EXCEPT(OwnerAddress, new_address, LandUse, row_num)
+FROM `spatial-motif-388503.Data_cleaning.unique_records_land_use`
+ORDER BY UniqueID_      
+LIMIT 30000
+
+
+
+
+
+
+
+
+
