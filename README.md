@@ -45,3 +45,69 @@ SELECT *
  WHERE UniqueID_ = 2045
 
 Which supports my belief that the data within the rows has not been altered by the “allow quoted lines” setting change. 
+
+I also double check that the date format has been applied correctly, by cross referencing the above data row with the original, and confirm that it has. 
+
+# Dealing with NULL values 
+
+Although the property address is missing in many entries, there are no missing parcel IDs. The parcel ID is unique for each property, and every entry for the same address has the same parcel ID. So, we can use this detail to perform a self join within the table on this value in the case where the parcelID appears more than once, with an address in at least one of those entries. 
+
+Usually you could use:
+
+UPDATE a
+SET PropertyAddress = ISNULL(a.PropertyAddress, b.PropertyAddress)
+ FROM `spatial-motif-388503.Data_cleaning.cleaning` a
+ JOIN `spatial-motif-388503.Data_cleaning.cleaning` b
+ ON a.ParcelID = b.ParcelID
+ AND a.UniqueID_ <> b.UniqueID_
+ WHERE a.PropertyAddress IS NULL
+
+However, I’m using a free version of Bigquery and so do not have the option to use DML queries. To get around this, I’m going to have to create an additional column, “new_address” 
+
+Select *,
+      IFNULL(a.PropertyAddress, b.PropertyAddress) as new_prop,
+FROM `spatial-motif-388503.Data_cleaning.cleaning` a
+JOIN `spatial-motif-388503.Data_cleaning.cleaning` b
+ON a.ParcelID = b.ParcelID
+AND a.UniqueID_ <> b.UniqueID_
+WHERE a.PropertyAddress IS NULL
+ 
+This will create a dataset with an updated field for address (new_address) when the address field is null. However, it also creates duplicate columns for all other fields. To clean this up, I run a second query to pull out only the columns from the original file: 
+
+ SELECT UniqueID_,
+       ParcelID,
+       LandUse,
+       PropertyAddress,
+       SaleDate,
+       SalePrice,
+       LegalReference,
+       SoldAsVacant,
+       OwnerName,
+       OwnerAddress,
+       Acreage,
+       TaxDistrict,
+       LandValue,
+       BuildingValue,
+       TotalValue,
+       YearBuilt,
+       Bedrooms,
+       FullBath,
+       HalfBath,
+       new_address
+FROM `spatial-motif-388503.Data_cleaning.new_address` 
+And save this as a new table (new_addresss2). 
+
+To get the rest of the data, (the data from the original table that did not have null values for the property address), I first create a second table with the same column (new_address): 
+
+SELECT *,
+    PropertyAddress AS new_address
+FROM `spatial-motif-388503.Data_cleaning.cleaning` 
+WHERE PropertyAddress IS NOT NULL
+
+And combine the two new tables using Union All. 
+
+CREATE TABLE `spatial-motif-388503.Data_cleaning.new_address2` AS  
+SELECT * FROM `spatial-motif-388503.Data_cleaning.new_address`
+UNION ALL 
+SELECT * FROM `spatial-motif-388503.Data_cleaning.new_addressnonull`
+
